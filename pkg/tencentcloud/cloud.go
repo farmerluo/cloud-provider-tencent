@@ -1,39 +1,49 @@
-package providers
+package tencentcloud
 
 import (
-"encoding/json"
-"io"
-"io/ioutil"
-"os"
+	"encoding/json"
+	"io"
+	"io/ioutil"
+	cloudprovider "k8s.io/cloud-provider"
+	"os"
 
-"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
-"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
-"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
-"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/regions"
-cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
-ccs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tke/v20180525"
-clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
+	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
+	ccs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tke/v20180525"
 
-
-"k8s.io/client-go/kubernetes"
-"k8s.io/kubernetes/pkg/cloudprovider"
-"k8s.io/kubernetes/pkg/controller"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
 	providerName = "tencentcloud"
 )
 
-var (
-	CloudInstanceNotFound = errors.New("tencentcloud instance not found")
-)
+type TxCloudConfig struct {
+	Region string `json:"region"`
+	VpcId  string `json:"vpc_id"`
 
-func init() {
-	cloudprovider.RegisterCloudProvider(providerName, NewCloud)
+	SecretId  string `json:"secret_id"`
+	SecretKey string `json:"secret_key"`
+
+	ClusterRouteTable string `json:"cluster_route_table"`
 }
 
-func NewCloud(config io.Reader) (cloudprovider.Interface, error) {
-	var c Config
+type Cloud struct {
+	config TxCloudConfig
+
+	kubeClient kubernetes.Interface
+
+	cvm   *cvm.Client
+	cvmV3 *cvm.Client
+	ccs   *ccs.Client
+	clb   *clb.Client
+}
+
+
+func NewCloud(config io.Reader) (*Cloud, error) {
+	var c TxCloudConfig
 	if config != nil {
 		cfg, err := ioutil.ReadAll(config)
 		if err != nil {
@@ -64,59 +74,44 @@ func NewCloud(config io.Reader) (cloudprovider.Interface, error) {
 	return &Cloud{config: c}, nil
 }
 
-type Cloud struct {
-	config Config
-
-	kubeClient kubernetes.Interface
-
-	cvm   *cvm.Client
-	cvmV3 *cvm.Client
-	ccs   *ccs.Client
-	clb   *clb.Client
-}
-
-type Config struct {
-	Region string `json:"region"`
-	VpcId  string `json:"vpc_id"`
-
-	SecretId  string `json:"secret_id"`
-	SecretKey string `json:"secret_key"`
-
-	ClusterRouteTable string `json:"cluster_route_table"`
+func init() {
+	cloudprovider.RegisterCloudProvider(providerName, func(config io.Reader) (cloudprovider.Interface, error) {
+		return NewCloud(config)
+	})
 }
 
 // Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
 // to perform housekeeping activities within the cloud provider.
-func (cloud *Cloud) Initialize(clientBuilder controller.ControllerClientBuilder) {
+func (cloud *Cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
 	cloud.kubeClient = clientBuilder.ClientOrDie("tencentcloud-cloud-provider")
-	cvmClient, err := cvm.NewClient(
-		common.Credential{SecretId: cloud.config.SecretId, SecretKey: cloud.config.SecretKey},
-		common.Opts{Region: cloud.config.Region},
+	credential := common.NewCredential(
+		//os.Getenv("TENCENTCLOUD_SECRET_ID"),
+		//os.Getenv("TENCENTCLOUD_SECRET_KEY"),
+		cloud.config.SecretId,
+		cloud.config.SecretKey,
 	)
+	// 非必要步骤
+	// 实例化一个客户端配置对象，可以指定超时时间等配置
+	cpf := profile.NewClientProfile()
+	// SDK有默认的超时时间，非必要请不要进行调整。
+	// 如有需要请在代码中查阅以获取最新的默认值。
+	cpf.HttpProfile.ReqTimeout = 10
+	cvmClient, err := cvm.NewClient(credential, cloud.config.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
 	cloud.cvm = cvmClient
-	cvmV3Client, err := cvm.NewClient(
-		common.Credential{SecretId: cloud.config.SecretId, SecretKey: cloud.config.SecretKey},
-		common.Opts{Region: cloud.config.Region, Host: cvm.CvmV3Host, Path: cvm.CvmV3Path},
-	)
+	cvmV3Client, err := cvm.NewClient(credential, cloud.config.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
 	cloud.cvmV3 = cvmV3Client
-	ccsClient, err := ccs.NewClient(
-		common.Credential{SecretId: cloud.config.SecretId, SecretKey: cloud.config.SecretKey},
-		common.Opts{Region: cloud.config.Region},
-	)
+	ccsClient, err := ccs.NewClient(credential, cloud.config.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
 	cloud.ccs = ccsClient
-	clbClient, err := clb.NewClient(
-		common.Credential{SecretId: cloud.config.SecretId, SecretKey: cloud.config.SecretKey},
-		common.Opts{Region: cloud.config.Region},
-	)
+	clbClient, err := clb.NewClient(credential, cloud.config.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
@@ -126,7 +121,7 @@ func (cloud *Cloud) Initialize(clientBuilder controller.ControllerClientBuilder)
 
 // LoadBalancer returns a balancer interface. Also returns true if the interface is supported, false otherwise.
 func (cloud *Cloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
-	return cloud, true
+	return nil, false
 }
 
 // Instances returns an instances interface. Also returns true if the interface is supported, false otherwise.
