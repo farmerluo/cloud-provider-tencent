@@ -27,7 +27,7 @@ func (cloud *Cloud) ListRoutes(ctx context.Context, clusterName string) ([]*clou
 	if err != nil {
 		return []*cloudprovider.Route{}, err
 	}
-	
+
 	routes := make([]*cloudprovider.Route, len(cloudRoutes.Response.RouteSet))
 	for idx, route := range cloudRoutes.Response.RouteSet {
 		routes[idx] = &cloudprovider.Route{Name: *route.GatewayIp, TargetNode: types.NodeName(*route.GatewayIp), DestinationCIDR: *route.DestinationCidrBlock}
