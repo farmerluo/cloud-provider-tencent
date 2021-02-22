@@ -173,19 +173,19 @@ func (cloud *Cloud) ensureLoadBalancerInstance(ctx context.Context, clusterName 
 	needRecreate := false
 	switch {
 	case loadBalancerDesiredType == LoadBalancerTypePublic && loadBalancerDesiredKind == LoadBalancerKindApplication:
-		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePublic && loadBalancer.Forward == ClbLoadBalancerKindApplication && loadBalancer.UniqVpcId == cloud.config.VpcId) {
+		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePublic && loadBalancer.Forward == ClbLoadBalancerKindApplication && loadBalancer.UniqVpcId == cloud.txConfig.VpcId) {
 			needRecreate = true
 		}
 	case loadBalancerDesiredType == LoadBalancerTypePublic && loadBalancerDesiredKind == LoadBalancerKindClassic:
-		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePublic && loadBalancer.Forward == ClbLoadBalancerKindClassic && loadBalancer.UniqVpcId == cloud.config.VpcId) {
+		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePublic && loadBalancer.Forward == ClbLoadBalancerKindClassic && loadBalancer.UniqVpcId == cloud.txConfig.VpcId) {
 			needRecreate = true
 		}
 	case loadBalancerDesiredType == LoadBalancerTypePrivate && loadBalancerDesiredKind == LoadBalancerKindApplication:
-		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePrivate && loadBalancer.Forward == ClbLoadBalancerKindApplication && loadBalancer.UniqVpcId == cloud.config.VpcId) {
+		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePrivate && loadBalancer.Forward == ClbLoadBalancerKindApplication && loadBalancer.UniqVpcId == cloud.txConfig.VpcId) {
 			needRecreate = true
 		}
 	case loadBalancerDesiredType == LoadBalancerTypePrivate && loadBalancerDesiredKind == LoadBalancerKindClassic:
-		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePrivate && loadBalancer.Forward == ClbLoadBalancerKindClassic && loadBalancer.UniqVpcId == cloud.config.VpcId) {
+		if !(loadBalancer.LoadBalancerType == ClbLoadBalancerTypePrivate && loadBalancer.Forward == ClbLoadBalancerKindClassic && loadBalancer.UniqVpcId == cloud.txConfig.VpcId) {
 			needRecreate = true
 		}
 	default:
@@ -480,7 +480,7 @@ func (cloud *Cloud) ensureClassicLoadBalancerBackends(ctx context.Context, clust
 	instances := []cvm.InstanceInfo{}
 
 	for _, instance := range instancesInMultiVpc {
-		if instance.VirtualPrivateCloud.VpcID == cloud.config.VpcId {
+		if instance.VirtualPrivateCloud.VpcID == cloud.txConfig.VpcId {
 			instances = append(instances, instance)
 		}
 	}
@@ -579,7 +579,7 @@ func (cloud *Cloud) ensureApplicationLoadBalancerBackends(ctx context.Context, c
 
 	instances := []cvm.InstanceInfo{}
 	for _, instance := range instancesInMultiVpc {
-		if instance.VirtualPrivateCloud.VpcID == cloud.config.VpcId {
+		if instance.VirtualPrivateCloud.VpcID == cloud.txConfig.VpcId {
 			instances = append(instances, instance)
 		}
 	}
@@ -720,7 +720,7 @@ func (cloud *Cloud) createLoadBalancer(ctx context.Context, clusterName string, 
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 
 	args := clb.CreateLoadBalancerArgs{
-		VpcId:   &cloud.config.VpcId,
+		VpcId:   &cloud.txConfig.VpcId,
 		Special: &loadBalancerName,
 	}
 

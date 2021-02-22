@@ -11,7 +11,7 @@ import (
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
-	ccs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tke/v20180525"
+	tke "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tke/v20180525"
 
 	"k8s.io/client-go/kubernetes"
 )
@@ -31,13 +31,13 @@ type TxCloudConfig struct {
 }
 
 type Cloud struct {
-	config TxCloudConfig
+	txConfig TxCloudConfig
 
 	kubeClient kubernetes.Interface
 
 	cvm   *cvm.Client
 	cvmV3 *cvm.Client
-	ccs   *ccs.Client
+	tke   *tke.Client
 	clb   *clb.Client
 }
 
@@ -71,7 +71,7 @@ func NewCloud(config io.Reader) (*Cloud, error) {
 		c.ClusterRouteTable = os.Getenv("TENCENTCLOUD_CLOUD_CONTROLLER_MANAGER_CLUSTER_ROUTE_TABLE")
 	}
 
-	return &Cloud{config: c}, nil
+	return &Cloud{txConfig: c}, nil
 }
 
 func init() {
@@ -87,8 +87,8 @@ func (cloud *Cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuild
 	credential := common.NewCredential(
 		//os.Getenv("TENCENTCLOUD_SECRET_ID"),
 		//os.Getenv("TENCENTCLOUD_SECRET_KEY"),
-		cloud.config.SecretId,
-		cloud.config.SecretKey,
+		cloud.txConfig.SecretId,
+		cloud.txConfig.SecretKey,
 	)
 	// 非必要步骤
 	// 实例化一个客户端配置对象，可以指定超时时间等配置
@@ -96,22 +96,22 @@ func (cloud *Cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuild
 	// SDK有默认的超时时间，非必要请不要进行调整。
 	// 如有需要请在代码中查阅以获取最新的默认值。
 	cpf.HttpProfile.ReqTimeout = 10
-	cvmClient, err := cvm.NewClient(credential, cloud.config.Region, cpf)
+	cvmClient, err := cvm.NewClient(credential, cloud.txConfig.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
 	cloud.cvm = cvmClient
-	cvmV3Client, err := cvm.NewClient(credential, cloud.config.Region, cpf)
+	cvmV3Client, err := cvm.NewClient(credential, cloud.txConfig.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
 	cloud.cvmV3 = cvmV3Client
-	ccsClient, err := ccs.NewClient(credential, cloud.config.Region, cpf)
+	tkeClient, err := tke.NewClient(credential, cloud.txConfig.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
-	cloud.ccs = ccsClient
-	clbClient, err := clb.NewClient(credential, cloud.config.Region, cpf)
+	cloud.tke = tkeClient
+	clbClient, err := clb.NewClient(credential, cloud.txConfig.Region, cpf)
 	if err != nil {
 		panic(err)
 	}
