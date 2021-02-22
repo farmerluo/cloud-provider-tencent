@@ -2,6 +2,9 @@ package tencentcloud
 
 import (
 	"context"
+	"fmt"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 
 	tke "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tke/v20180525"
 
@@ -12,17 +15,23 @@ import (
 // ListRoutes lists all managed routes that belong to the specified clusterName
 func (cloud *Cloud) ListRoutes(ctx context.Context, clusterName string) ([]*cloudprovider.Route, error) {
 	//cloudRoutes, err := cloud.tke.DescribeClusterRoute(&tke.DescribeClusterRouteArgs{RouteTableName: cloud.txConfig.ClusterRouteTable})
-	request := tke.NewDescribeClusterRouteTablesRequest()
+	request := tke.NewDescribeClusterRoutesRequest()
 
-	cloudRoutes, err := cloud.tke.DescribeClusterRouteTables(request)
+	request.RouteTableName = common.StringPtr(cloud.txConfig.ClusterRouteTable)
+
+	cloudRoutes, err := cloud.tke.DescribeClusterRoutes(request)
+	if _, ok := err.(*errors.TencentCloudSDKError); ok {
+		fmt.Printf("An API error has returned: %s", err)
+		return []*cloudprovider.Route{}, err
+	}
+	//fmt.Printf("%s", cloudRoutes.ToJsonString())
 	if err != nil {
 		return []*cloudprovider.Route{}, err
 	}
+	routes := make([]*cloudprovider.Route, len(cloudRoutes.Response.RouteSet))
 
-	routes := make([]*cloudprovider.Route, len(cloudRoutes.Data.RouteSet))
-
-	for idx, route := range cloudRoutes.Data.RouteSet {
-		routes[idx] = &cloudprovider.Route{Name: route.GatewayIp, TargetNode: types.NodeName(route.GatewayIp), DestinationCIDR: route.DestinationCidrBlock}
+	for idx, route := range cloudRoutes.Response.RouteSet {
+		routes[idx] = &cloudprovider.Route{Name: *route.GatewayIp, TargetNode: types.NodeName(*route.GatewayIp), DestinationCIDR: *route.DestinationCidrBlock}
 	}
 	return routes, nil
 }
