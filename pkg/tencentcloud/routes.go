@@ -16,7 +16,6 @@ import (
 func (cloud *Cloud) ListRoutes(ctx context.Context, clusterName string) ([]*cloudprovider.Route, error) {
 	//cloudRoutes, err := cloud.tke.DescribeClusterRoute(&tke.DescribeClusterRouteArgs{RouteTableName: cloud.txConfig.ClusterRouteTable})
 	request := tke.NewDescribeClusterRoutesRequest()
-
 	request.RouteTableName = common.StringPtr(cloud.txConfig.ClusterRouteTable)
 
 	cloudRoutes, err := cloud.tke.DescribeClusterRoutes(request)
@@ -28,8 +27,8 @@ func (cloud *Cloud) ListRoutes(ctx context.Context, clusterName string) ([]*clou
 	if err != nil {
 		return []*cloudprovider.Route{}, err
 	}
+	
 	routes := make([]*cloudprovider.Route, len(cloudRoutes.Response.RouteSet))
-
 	for idx, route := range cloudRoutes.Response.RouteSet {
 		routes[idx] = &cloudprovider.Route{Name: *route.GatewayIp, TargetNode: types.NodeName(*route.GatewayIp), DestinationCIDR: *route.DestinationCidrBlock}
 	}
