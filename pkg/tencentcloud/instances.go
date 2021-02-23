@@ -2,15 +2,20 @@ package tencentcloud
 
 import (
 	"context"
-	"errors"
 	"fmt"
+
+	"errors"
+
+	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	cloudErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
+
 	"strings"
 
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/cloudprovider"
+	cloudProvider "k8s.io/cloud-provider"
 )
 
 // NodeAddresses returns the addresses of the specified instance.
@@ -18,16 +23,17 @@ import (
 // returns the address of the calling instance. We should do a rename to
 // make this clearer.
 func (cloud *Cloud) NodeAddresses(ctx context.Context, name types.NodeName) ([]v1.NodeAddress, error) {
+
 	node, err := cloud.getInstanceByInstancePrivateIp(string(name))
 	if err != nil {
 		return []v1.NodeAddress{}, err
 	}
-	addresses := make([]v1.NodeAddress, len(node.PrivateIPAddresses)+len(node.PublicIPAddresses))
-	for idx, ip := range node.PrivateIPAddresses {
-		addresses[idx] = v1.NodeAddress{Type: v1.NodeInternalIP, Address: ip}
+	addresses := make([]v1.NodeAddress, len(node.PrivateIpAddresses)+len(node.PublicIpAddresses))
+	for idx, ip := range node.PrivateIpAddresses {
+		addresses[idx] = v1.NodeAddress{Type: v1.NodeInternalIP, Address: *ip}
 	}
-	for idx, ip := range node.PublicIPAddresses {
-		addresses[len(node.PrivateIPAddresses)+idx] = v1.NodeAddress{Type: v1.NodeExternalIP, Address: ip}
+	for idx, ip := range node.PublicIpAddresses {
+		addresses[len(node.PrivateIpAddresses)+idx] = v1.NodeAddress{Type: v1.NodeExternalIP, Address: *ip}
 	}
 	return addresses, nil
 }
@@ -45,12 +51,12 @@ func (cloud *Cloud) NodeAddressesByProviderID(ctx context.Context, providerID st
 		if err != nil {
 			return []v1.NodeAddress{}, err
 		}
-		addresses := make([]v1.NodeAddress, len(instance.PrivateIPAddresses)+len(instance.PublicIPAddresses))
-		for idx, ip := range instance.PrivateIPAddresses {
-			addresses[idx] = v1.NodeAddress{Type: v1.NodeInternalIP, Address: ip}
+		addresses := make([]v1.NodeAddress, len(instance.PrivateIpAddresses)+len(instance.PublicIpAddresses))
+		for idx, ip := range instance.PrivateIpAddresses {
+			addresses[idx] = v1.NodeAddress{Type: v1.NodeInternalIP, Address: *ip}
 		}
-		for idx, ip := range instance.PublicIPAddresses {
-			addresses[len(instance.PrivateIPAddresses)+idx] = v1.NodeAddress{Type: v1.NodeExternalIP, Address: ip}
+		for idx, ip := range instance.PublicIpAddresses {
+			addresses[len(instance.PrivateIpAddresses)+idx] = v1.NodeAddress{Type: v1.NodeExternalIP, Address: *ip}
 		}
 		return addresses, nil
 	}
@@ -65,7 +71,7 @@ func (cloud *Cloud) ExternalID(ctx context.Context, nodeName types.NodeName) (st
 		return "", err
 	}
 
-	return node.InstanceID, nil
+	return *node.InstanceId, nil
 }
 
 // InstanceID returns the cloud provider ID of the node with the specified NodeName.
@@ -75,7 +81,7 @@ func (cloud *Cloud) InstanceID(ctx context.Context, nodeName types.NodeName) (st
 		return "", err
 	}
 
-	return fmt.Sprintf("/%s/%s", node.Placement.Zone, node.InstanceID), nil
+	return fmt.Sprintf("/%s/%s", *node.Placement.Zone, *node.InstanceId), nil
 }
 
 // InstanceType returns the type of the specified instance.
@@ -91,13 +97,13 @@ func (cloud *Cloud) InstanceTypeByProviderID(ctx context.Context, providerID str
 // AddSSHKeyToAllInstances adds an SSH public key as a legal identity for all instances
 // expected format for the key is standard ssh-keygen format: <protocol> <blob>
 func (cloud *Cloud) AddSSHKeyToAllInstances(ctx context.Context, user string, keyData []byte) error {
-	return cloudprovider.NotImplemented
+	return cloudProvider.NotImplemented
 }
 
 // CurrentNodeName returns the name of the node we are currently running on
 // On most clouds (e.g. GCE) this is the hostname, so we provide the hostname
 func (cloud *Cloud) CurrentNodeName(ctx context.Context, hostname string) (types.NodeName, error) {
-	return types.NodeName(""), cloudprovider.NotImplemented
+	return types.NodeName(""), cloudProvider.NotImplemented
 }
 
 // InstanceExistsByProviderID returns true if the instance for the given provider id still is running.
@@ -112,42 +118,79 @@ func (cloud *Cloud) InstanceShutdownByProviderID(ctx context.Context, providerID
 	return true, nil
 }
 
-func (cloud *Cloud) getInstanceByInstancePrivateIp(privateIp string) (*cvm.InstanceInfo, error) {
-	instances, err := cloud.cvm.DescribeInstances(&cvm.DescribeInstancesArgs{
-		Version: cvm.DefaultVersion,
-		Filters: &[]cvm.Filter{cvm.NewFilter(cvm.FilterNamePrivateIpAddress, privateIp)},
-	})
+func (cloud *Cloud) getInstanceByInstancePrivateIp(privateIp string) (*cvm.Instance, error) {
+	request := cvm.NewDescribeInstancesRequest()
+	request.Filters = []*cvm.Filter{
+		&cvm.Filter{
+			Values: common.StringPtrs([]string{privateIp}),
+			Name:   common.StringPtr("private-ip-address"),
+		},
+	}
+
+	response, err := cloud.cvm.DescribeInstances(request)
+	if _, ok := err.(*cloudErrors.TencentCloudSDKError); ok {
+		fmt.Printf("An API error has returned: %s", err)
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
-	for _, instance := range instances.InstanceSet {
-		if instance.VirtualPrivateCloud.VpcID != cloud.txConfig.VpcId {
+	//fmt.Printf("%s", response.ToJsonString())
+
+	for _, instance := range response.Response.InstanceSet {
+		if *instance.VirtualPrivateCloud.VpcId != cloud.txConfig.VpcId {
 			continue
 		}
-		for _, ip := range instance.PrivateIPAddresses {
-			if ip == privateIp {
-				return &instance, nil
+		for _, ip := range instance.PrivateIpAddresses {
+			if *ip == privateIp {
+				return instance, nil
 			}
 		}
 	}
 	return nil, CloudInstanceNotFound
 }
 
-func (cloud *Cloud) getInstanceByInstanceID(instanceID string) (*cvm.InstanceInfo, error) {
-	instances, err := cloud.cvm.DescribeInstances(&cvm.DescribeInstancesArgs{
-		Version: cvm.DefaultVersion,
-		Filters: &[]cvm.Filter{cvm.NewFilter(cvm.FilterNameInstanceId, instanceID)},
-	})
+func (cloud *Cloud) getInstanceByInstanceID(instanceID string) (*cvm.Instance, error) {
+	request := cvm.NewDescribeInstancesRequest()
+	request.Filters = []*cvm.Filter{
+		&cvm.Filter{
+			Values: common.StringPtrs([]string{instanceID}),
+			Name:   common.StringPtr("instance-id"),
+		},
+	}
+
+	response, err := cloud.cvm.DescribeInstances(request)
+	if _, ok := err.(*cloudErrors.TencentCloudSDKError); ok {
+		fmt.Printf("An API error has returned: %s", err)
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
-	for _, instance := range instances.InstanceSet {
-		if instance.VirtualPrivateCloud.VpcID != cloud.txConfig.VpcId {
+	//fmt.Printf("%s", response.ToJsonString())
+
+	for _, instance := range response.Response.InstanceSet {
+		if *instance.VirtualPrivateCloud.VpcId != cloud.txConfig.VpcId {
 			continue
 		}
-		if instance.InstanceID == instanceID {
-			return &instance, nil
+		if instanceID == *instance.InstanceId {
+			return instance, nil
 		}
 	}
 	return nil, CloudInstanceNotFound
+
+}
+
+// getInstanceIdByProviderID returns the addresses of the specified instance.
+func (cloud *Cloud) getInstanceByProviderID(providerID string) (*cvm.Instance, error) {
+	id := strings.TrimPrefix(providerID, fmt.Sprintf("%s://", providerName))
+	parts := strings.Split(id, "/")
+	if len(parts) == 3 {
+		instance, err := cloud.getInstanceByInstanceID(parts[2])
+		if err != nil {
+			return nil, err
+		}
+		return instance, nil
+	}
+	return nil, errors.New(fmt.Sprintf("invalid format for providerId %s", providerID))
 }

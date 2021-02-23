@@ -8,9 +8,12 @@ require (
 	github.com/spf13/cobra v1.1.1 // indirect
 	github.com/stretchr/testify v1.6.1 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go v1.0.103
+	k8s.io/api v0.18.0
+	k8s.io/apimachinery v0.18.0
 	k8s.io/client-go v0.18.0
+	k8s.io/cloud-provider v0.18.0
 	k8s.io/component-base v0.18.0
-	k8s.io/klog/v2 v2.5.0 // indirect
+	k8s.io/klog/v2 v2.5.0
 	k8s.io/kubernetes v1.18.0
 	k8s.io/legacy-cloud-providers v0.18.0 // indirect
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920 // indirect

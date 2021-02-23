@@ -2,14 +2,17 @@ package tencentcloud
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
-	cloudprovider "k8s.io/cloud-provider"
 	"os"
+
+	cloudprovider "k8s.io/cloud-provider"
 
 	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 	tke "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tke/v20180525"
 
@@ -41,6 +44,9 @@ type Cloud struct {
 	clb   *clb.Client
 }
 
+var (
+	CloudInstanceNotFound = errors.New("tencentcloud instance not found")
+)
 
 func NewCloud(config io.Reader) (*Cloud, error) {
 	var c TxCloudConfig
