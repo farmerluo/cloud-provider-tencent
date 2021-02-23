@@ -14,6 +14,8 @@ ARG GOLANG_IMAGE=golang:1.15.3
 ARG DISTROLESS_IMAGE=alpine:3.9
 
 # docker build command:
+# VERSION: 0.1
+# IMAGE: ccr.ccs.tencentyun.com/weimob-public/cloud-provider-tencent:v0.1
 # docker build \
 #		--build-arg VERSION=$(VERSION) \
 #		--build-arg GOOS=$(GOOS) \
