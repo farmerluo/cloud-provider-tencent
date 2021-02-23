@@ -2,20 +2,17 @@ package tencentcloud
 
 import (
 	"context"
-	"fmt"
-
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	cloudErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
-
-	"strings"
-
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	cloudProvider "k8s.io/cloud-provider"
+	"k8s.io/klog/v2"
 )
 
 // NodeAddresses returns the addresses of the specified instance.
@@ -24,8 +21,9 @@ import (
 // make this clearer.
 func (cloud *Cloud) NodeAddresses(ctx context.Context, name types.NodeName) ([]v1.NodeAddress, error) {
 
-	node, err := cloud.getInstanceByInstancePrivateIp(string(name))
+	node, err := cloud.getInstanceByInstancePrivateIp(ctx, string(name))
 	if err != nil {
+		klog.V(2).Infof("tencentcloud.NodeAddresses(\"%s\") message=[%v]", string(name), err)
 		return []v1.NodeAddress{}, err
 	}
 	addresses := make([]v1.NodeAddress, len(node.PrivateIpAddresses)+len(node.PublicIpAddresses))
@@ -44,30 +42,27 @@ func (cloud *Cloud) NodeAddresses(ctx context.Context, name types.NodeName) ([]v
 // from the node whose nodeaddresses are being queried. i.e. local metadata
 // services cannot be used in this method to obtain nodeaddresses
 func (cloud *Cloud) NodeAddressesByProviderID(ctx context.Context, providerID string) ([]v1.NodeAddress, error) {
-	id := strings.TrimPrefix(providerID, fmt.Sprintf("%s://", providerName))
-	parts := strings.Split(id, "/")
-	if len(parts) == 3 {
-		instance, err := cloud.getInstanceByInstanceID(parts[2])
-		if err != nil {
-			return []v1.NodeAddress{}, err
-		}
-		addresses := make([]v1.NodeAddress, len(instance.PrivateIpAddresses)+len(instance.PublicIpAddresses))
-		for idx, ip := range instance.PrivateIpAddresses {
-			addresses[idx] = v1.NodeAddress{Type: v1.NodeInternalIP, Address: *ip}
-		}
-		for idx, ip := range instance.PublicIpAddresses {
-			addresses[len(instance.PrivateIpAddresses)+idx] = v1.NodeAddress{Type: v1.NodeExternalIP, Address: *ip}
-		}
-		return addresses, nil
+	instance, err := cloud.getInstanceByProviderID(ctx, providerID)
+	if err != nil {
+		klog.V(2).Infof("tencentcloud.NodeAddressesByProviderID(\"%s\") message=[%v]", providerID, err)
+		return []v1.NodeAddress{}, err
 	}
-	return []v1.NodeAddress{}, errors.New(fmt.Sprintf("invalid format for providerId %s", providerID))
+	addresses := make([]v1.NodeAddress, len(instance.PrivateIpAddresses)+len(instance.PublicIpAddresses))
+	for idx, ip := range instance.PrivateIpAddresses {
+		addresses[idx] = v1.NodeAddress{Type: v1.NodeInternalIP, Address: *ip}
+	}
+	for idx, ip := range instance.PublicIpAddresses {
+		addresses[len(instance.PrivateIpAddresses)+idx] = v1.NodeAddress{Type: v1.NodeExternalIP, Address: *ip}
+	}
+	return addresses, nil
 }
 
 // ExternalID returns the cloud provider ID of the node with the specified NodeName.
 // Note that if the instance does not exist or is no longer running, we must return ("", cloudprovider.InstanceNotFound)
 func (cloud *Cloud) ExternalID(ctx context.Context, nodeName types.NodeName) (string, error) {
-	node, err := cloud.getInstanceByInstancePrivateIp(string(nodeName))
+	node, err := cloud.getInstanceByInstancePrivateIp(ctx, string(nodeName))
 	if err != nil {
+		klog.V(2).Infof("tencentcloud.ExternalID(\"%s\") message=[%v]", string(nodeName), err)
 		return "", err
 	}
 
@@ -76,8 +71,9 @@ func (cloud *Cloud) ExternalID(ctx context.Context, nodeName types.NodeName) (st
 
 // InstanceID returns the cloud provider ID of the node with the specified NodeName.
 func (cloud *Cloud) InstanceID(ctx context.Context, nodeName types.NodeName) (string, error) {
-	node, err := cloud.getInstanceByInstancePrivateIp(string(nodeName))
+	node, err := cloud.getInstanceByInstancePrivateIp(ctx, string(nodeName))
 	if err != nil {
+		klog.V(2).Infof("tencentcloud.InstanceID(\"%s\") message=[%v]", string(nodeName), err)
 		return "", err
 	}
 
@@ -86,12 +82,24 @@ func (cloud *Cloud) InstanceID(ctx context.Context, nodeName types.NodeName) (st
 
 // InstanceType returns the type of the specified instance.
 func (cloud *Cloud) InstanceType(ctx context.Context, name types.NodeName) (string, error) {
-	return providerName, nil
+	node, err := cloud.getInstanceByInstancePrivateIp(ctx, string(name))
+	if err != nil {
+		klog.V(2).Infof("tencentcloud.InstanceType(\"%s\") message=[%v]", string(name), err)
+		return "", err
+	}
+
+	return *node.InstanceType, nil
 }
 
 // InstanceTypeByProviderID returns the type of the specified instance.
 func (cloud *Cloud) InstanceTypeByProviderID(ctx context.Context, providerID string) (string, error) {
-	return providerName, nil
+	node, err := cloud.getInstanceByProviderID(ctx, providerID)
+	if err != nil {
+		klog.V(2).Infof("tencentcloud.InstanceTypeByProviderID(\"%s\") message=[%v]", providerID, err)
+		return "", err
+	}
+
+	return *node.InstanceType, nil
 }
 
 // AddSSHKeyToAllInstances adds an SSH public key as a legal identity for all instances
@@ -109,16 +117,28 @@ func (cloud *Cloud) CurrentNodeName(ctx context.Context, hostname string) (types
 // InstanceExistsByProviderID returns true if the instance for the given provider id still is running.
 // If false is returned with no error, the instance will be immediately deleted by the cloud controller manager.
 func (cloud *Cloud) InstanceExistsByProviderID(ctx context.Context, providerID string) (bool, error) {
-	return true, nil
+	_, err := cloud.getInstanceByProviderID(ctx, providerID)
+	if err == cloudProvider.InstanceNotFound {
+		klog.V(2).Infof("tencentcloud.InstanceExistsByProviderID(\"%s\") message=[%v]", providerID, err)
+		return false, err
+	}
+	return true, err
 }
 
-// InstanceExistsByProviderID returns true if the instance for the given provider id still is running.
-// If false is returned with no error, the instance will be immediately deleted by the cloud controller manager.
+// InstanceShutdownByProviderID returns true if the instance is shutdown in cloudprovider
 func (cloud *Cloud) InstanceShutdownByProviderID(ctx context.Context, providerID string) (bool, error) {
-	return true, nil
+	instance, err := cloud.getInstanceByProviderID(ctx, providerID)
+	if err != nil {
+		klog.V(2).Infof("tencentcloud.InstanceShutdownByProviderID(\"%s\") message=[%v]", providerID, err)
+		return false, err
+	}
+	if *instance.InstanceState != "RUNNING" {
+		return true, err
+	}
+	return false, err
 }
 
-func (cloud *Cloud) getInstanceByInstancePrivateIp(privateIp string) (*cvm.Instance, error) {
+func (cloud *Cloud) getInstanceByInstancePrivateIp(ctx context.Context, privateIp string) (*cvm.Instance, error) {
 	request := cvm.NewDescribeInstancesRequest()
 	request.Filters = []*cvm.Filter{
 		&cvm.Filter{
@@ -147,10 +167,10 @@ func (cloud *Cloud) getInstanceByInstancePrivateIp(privateIp string) (*cvm.Insta
 			}
 		}
 	}
-	return nil, CloudInstanceNotFound
+	return nil, cloudProvider.InstanceNotFound
 }
 
-func (cloud *Cloud) getInstanceByInstanceID(instanceID string) (*cvm.Instance, error) {
+func (cloud *Cloud) getInstanceByInstanceID(ctx context.Context, instanceID string) (*cvm.Instance, error) {
 	request := cvm.NewDescribeInstancesRequest()
 	request.Filters = []*cvm.Filter{
 		&cvm.Filter{
@@ -177,16 +197,16 @@ func (cloud *Cloud) getInstanceByInstanceID(instanceID string) (*cvm.Instance, e
 			return instance, nil
 		}
 	}
-	return nil, CloudInstanceNotFound
+	return nil, cloudProvider.InstanceNotFound
 
 }
 
 // getInstanceIdByProviderID returns the addresses of the specified instance.
-func (cloud *Cloud) getInstanceByProviderID(providerID string) (*cvm.Instance, error) {
+func (cloud *Cloud) getInstanceByProviderID(ctx context.Context, providerID string) (*cvm.Instance, error) {
 	id := strings.TrimPrefix(providerID, fmt.Sprintf("%s://", providerName))
 	parts := strings.Split(id, "/")
 	if len(parts) == 3 {
-		instance, err := cloud.getInstanceByInstanceID(parts[2])
+		instance, err := cloud.getInstanceByInstanceID(ctx, parts[2])
 		if err != nil {
 			return nil, err
 		}

@@ -2,7 +2,6 @@ package tencentcloud
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -43,10 +42,6 @@ type Cloud struct {
 	tke   *tke.Client
 	clb   *clb.Client
 }
-
-var (
-	CloudInstanceNotFound = errors.New("tencentcloud instance not found")
-)
 
 func NewCloud(config io.Reader) (*Cloud, error) {
 	var c TxCloudConfig
