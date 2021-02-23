@@ -1,4 +1,4 @@
-module cloud-provider-tencent
+module github.com/farmerluo/cloud-provider-tencent
 
 go 1.15
 
