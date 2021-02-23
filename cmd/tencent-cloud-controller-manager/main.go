@@ -13,6 +13,8 @@ import (
 	// implementing an out-of-tree cloud-provider.
 	_ "k8s.io/component-base/metrics/prometheus/clientgo" // load all the prometheus client-go plugins
 	_ "k8s.io/kubernetes/pkg/cloudprovider/providers"
+	_ "github.com/farmerluo/cloud-provider-tencent/pkg/tencentcloud"
+
 )
 
 func main() {
