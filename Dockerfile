@@ -46,4 +46,4 @@ RUN GO111MODULE=on CGO_ENABLED=0 GOOS=${GOOS} GOPROXY=${GOPROXY} go build \
 # Copy the manager into the distroless image.
 FROM ${DISTROLESS_IMAGE}
 COPY --from=builder /build/tencent-cloud-controller-manager /bin/tencent-cloud-controller-manager
-ENTRYPOINT [ "/bin/aws-cloud-controller-manager" ]
+ENTRYPOINT [ "/bin/tencent-cloud-controller-manager" ]
